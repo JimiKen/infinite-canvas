@@ -1,20 +1,21 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { fabric as Fabric } from "fabric";
 import "./index.css";
 
 export default function App() {
   const canvasRef = useRef(null);
   const fabricRef = useRef(null);
+  const [connectMode, setConnectMode] = useState(false);
+  const [connectStep, setConnectStep] = useState([]);
+  const connectionMap = useRef([]);
 
   useEffect(() => {
     const canvas = new Fabric.Canvas("canvas", {
       width: window.innerWidth - 120,
       height: window.innerHeight,
       backgroundColor: "#f9fafb",
-      selection: true,
     });
 
-    canvas.setZoom(1);
     fabricRef.current = canvas;
 
     const handleResize = () => {
@@ -24,8 +25,26 @@ export default function App() {
     };
 
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+    canvas.on("object:moving", updateConnections);
+
+    canvas.on("mouse:down", (opt) => {
+      if (!connectMode) return;
+      if (opt.target) {
+        setConnectStep((prev) => {
+          const next = [...prev, opt.target];
+          if (next.length === 2) {
+            connectObjects(next[0], next[1]);
+            return [];
+          }
+          return next;
+        });
+      }
+    });
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [connectMode]);
 
   const addRect = () => {
     const rect = new Fabric.Rect({
@@ -49,7 +68,7 @@ export default function App() {
   };
 
   const addCell = () => {
-    const cell = new Fabric.Rect({
+    const rect = new Fabric.Rect({
       left: 150,
       top: 150,
       width: 120,
@@ -63,49 +82,53 @@ export default function App() {
       top: 155,
       fontSize: 14,
       width: 110,
-      editable: true,
     });
-    fabricRef.current.add(cell);
+    fabricRef.current.add(rect);
     fabricRef.current.add(text);
   };
 
-  const handleDrop = (type) => {
-    switch (type) {
-      case "rect":
-        addRect();
-        break;
-      case "line":
-        addLine();
-        break;
-      case "cell":
-        addCell();
-        break;
-      default:
-        break;
-    }
+  const connectObjects = (obj1, obj2) => {
+    const [x1, y1] = getCenter(obj1);
+    const [x2, y2] = getCenter(obj2);
+    const line = new Fabric.Line([x1, y1, x2, y2], {
+      stroke: "blue",
+      selectable: false,
+      evented: false,
+    });
+    fabricRef.current.add(line);
+    connectionMap.current.push({ line, from: obj1, to: obj2 });
+  };
+
+  const updateConnections = () => {
+    connectionMap.current.forEach(({ line, from, to }) => {
+      const [x1, y1] = getCenter(from);
+      const [x2, y2] = getCenter(to);
+      line.set({ x1, y1, x2, y2 });
+    });
+    fabricRef.current.requestRenderAll();
+  };
+
+  const getCenter = (obj) => {
+    return [obj.left + obj.width / 2, obj.top + obj.height / 2];
   };
 
   return (
     <div className="app">
       <div className="sidebar">
-        <div draggable onDragStart={(e) => e.dataTransfer.setData('type', 'rect')}>矩形</div>
-        <div draggable onDragStart={(e) => e.dataTransfer.setData('type', 'line')}>线条</div>
-        <div draggable onDragStart={(e) => e.dataTransfer.setData('type', 'cell')}>单元格</div>
-        <div className="click-tools">
-          <button onClick={addRect}>添加矩形</button>
-          <button onClick={addLine}>添加线条</button>
-          <button onClick={addCell}>添加单元格</button>
-        </div>
+        <button onClick={addRect}>添加矩形</button>
+        <button onClick={addLine}>添加线条</button>
+        <button onClick={addCell}>添加单元格</button>
+        <button
+          style={{ background: connectMode ? '#cce' : '' }}
+          onClick={() => {
+            setConnectMode(!connectMode);
+            setConnectStep([]);
+          }}
+        >
+          {connectMode ? '退出连接模式' : '连接线'}
+        </button>
       </div>
-      <canvas
-        id="canvas"
-        ref={canvasRef}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          const type = e.dataTransfer.getData('type');
-          handleDrop(type);
-        }}
-      />
+      <canvas id="canvas" ref={canvasRef} />
     </div>
   );
 }
